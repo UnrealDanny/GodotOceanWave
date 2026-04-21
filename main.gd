@@ -4,6 +4,7 @@ extends Node3D
 var clipmap_tile_size := 1.0 # Not the smallest tile size, but one that reduces the amount of vertex jitter.
 var previous_tile := Vector3i.MAX
 var should_render_imgui := not Engine.is_editor_hint()
+var _default_cache : Dictionary = {}
 
 @onready var viewport : Variant = Engine.get_singleton(&'EditorInterface').get_editor_viewport_3d(0) if Engine.is_editor_hint() else get_viewport()
 @onready var camera : Variant = viewport.get_camera_3d()
@@ -17,6 +18,36 @@ var should_render_imgui := not Engine.is_editor_hint()
 @onready var _is_sea_spray_visible : Array[bool] = [true]
 @onready var _update_textures : Array[bool] = [true]
 
+# --- NEW: Subsurface Glow UI Variables ---
+@onready var _crest_color : Array[float] = [0.0, 0.65, 0.85]
+@onready var _crest_glow_intensity : Array[float] = [0.8]
+@onready var _aerated_foam_glow : Array[float] = [0.5]
+
+func _ready() -> void:
+	if Engine.is_editor_hint(): return
+	
+	# 1. Cache the base scalars and colors
+	_default_cache["fov"] = camera.fov
+	_default_cache["map_size"] = water.map_size
+	_default_cache["mesh_quality"] = water.mesh_quality
+	_default_cache["clipmap_tile"] = clipmap_tile_size
+	_default_cache["updates"] = water.updates_per_second
+	_default_cache["water_color"] = water.water_color
+	_default_cache["foam_color"] = water.foam_color
+	_default_cache["sea_spray"] = $Water/WaterSprayEmitter.visible
+	_default_cache["update_tex"] = water.update_textures
+	
+	# 2. Cache Shader properties
+	_default_cache["crest_color"] = Color(_crest_color[0], _crest_color[1], _crest_color[2])
+	_default_cache["crest_glow"] = _crest_glow_intensity[0]
+	_default_cache["aerated_glow"] = _aerated_foam_glow[0]
+	
+	# 3. Deep copy the cascade parameters (so we save the original math)
+	var default_cascades : Array[WaveCascadeParameters] = []
+	for p in water.parameters:
+		default_cascades.append(p.duplicate(true))
+	_default_cache["cascades"] = default_cascades
+	
 func _init() -> void:
 	if Engine.is_editor_hint(): return
 	if DisplayServer.window_get_vsync_mode() == DisplayServer.VSYNC_ENABLED:
@@ -123,7 +154,38 @@ func _render_imgui() -> void:
 		if ImGui.ColorPicker3('##foam_color_picker', _foam_color, ImGui.ColorEditFlags_Float | ImGui.ColorEditFlags_NoSidePreview | ImGui.ColorEditFlags_DisplayRGB | ImGui.ColorEditFlags_DisplayHex):
 			water.foam_color = Color(_foam_color[0], _foam_color[1], _foam_color[2])
 		ImGui.EndPopup()
+	
+	if ImGui.BeginPopup('foam_color_picker'):
+		if ImGui.ColorPicker3('##foam_color_picker', _foam_color, ImGui.ColorEditFlags_Float | ImGui.ColorEditFlags_NoSidePreview | ImGui.ColorEditFlags_DisplayRGB | ImGui.ColorEditFlags_DisplayHex):
+			water.foam_color = Color(_foam_color[0], _foam_color[1], _foam_color[2])
+		ImGui.EndPopup()
 
+	# --- NEW: Subsurface Glow ImGui Controls ---
+	ImGui.SeparatorText('Subsurface Glow')
+	ImGui.Text('Crest Color:       ')
+	ImGui.SameLine()
+	
+	var current_crest_color := Color(_crest_color[0], _crest_color[1], _crest_color[2])
+	if ImGui.ColorButtonEx('##crest_color_button', current_crest_color, ImGui.ColorEditFlags_Float, Vector2(ImGui.GetColumnWidth(), ImGui.GetFrameHeight())): 
+		ImGui.OpenPopup('crest_color_picker')
+		
+	if ImGui.BeginPopup('crest_color_picker'):
+		if ImGui.ColorPicker3('##crest_color_picker', _crest_color, ImGui.ColorEditFlags_Float | ImGui.ColorEditFlags_NoSidePreview | ImGui.ColorEditFlags_DisplayRGB | ImGui.ColorEditFlags_DisplayHex):
+			var new_color := Color(_crest_color[0], _crest_color[1], _crest_color[2])
+			water.get_active_material(0).set_shader_parameter("crest_color", new_color)
+		ImGui.EndPopup()
+		
+	imgui_text_tooltip('Crest Glow:        ', 'Glow intensity on the high wave peaks.')
+	ImGui.SameLine()
+	if ImGui.SliderFloat('##crest_glow', _crest_glow_intensity, 0.0, 2.0): 
+		water.get_active_material(0).set_shader_parameter("crest_glow_intensity", _crest_glow_intensity[0])
+		
+	imgui_text_tooltip('Aerated Glow:      ', 'Glow intensity of the micro-foam beneath the surface.')
+	ImGui.SameLine()
+	if ImGui.SliderFloat('##aerated_glow', _aerated_foam_glow, 0.0, 2.0): 
+		water.get_active_material(0).set_shader_parameter("aerated_foam_glow", _aerated_foam_glow[0])
+	# -------------------------------------------
+	
 	ImGui.SeparatorText('Wave Parameters')
 	if ImGui.BeginTabBar('##cascades'):
 		# CHANGED: Replaced len() with .size()
@@ -192,6 +254,20 @@ func _render_imgui() -> void:
 				ImGui.EndTabItem()
 		ImGui.EndTabBar()
 
+	# --- TOOLS SECTION ---
+	ImGui.SeparatorText('Tools')
+	
+	if ImGui.Button('Reset All to Default'):
+		reset_to_defaults()
+		
+	ImGui.SameLine() # Puts the bake button on the exact same row!
+	
+	if ImGui.Button('Bake Current Waves to .RES'):
+		water.bake_waves_to_res()
+		
+	ImGui.Dummy(Vector2(0.0, 5.0)) 
+	# ---------------------
+
 	ImGui.SeparatorText('Camera')
 	# Using Godot's built-in formatting for Vector3 to 2 decimal places
 	ImGui.Text('Camera Position:    %.2f, %.2f, %.2f' % [camera.global_position.x, camera.global_position.y, camera.global_position.z])
@@ -206,3 +282,63 @@ func _render_imgui() -> void:
 	ImGui.Text('Press %s-F to toggle fullscreen!' % ['Cmd' if OS.get_name() == 'macOS' else 'Ctrl'])
 	ImGui.PopStyleColor()
 	ImGui.End()
+
+func reset_to_defaults() -> void:
+	if _default_cache.is_empty(): return
+	
+	# 1. Reset Camera & Base Settings
+	camera.fov = _default_cache["fov"]
+	_camera_fov[0] = camera.fov
+	
+	water.map_size = _default_cache["map_size"]
+	water.mesh_quality = _default_cache["mesh_quality"]
+	clipmap_tile_size = _default_cache["clipmap_tile"]
+	
+	water.updates_per_second = _default_cache["updates"]
+	_updates_per_second[0] = water.updates_per_second
+	
+	water.update_textures = _default_cache["update_tex"]
+	_update_textures[0] = water.update_textures
+	
+	$Water/WaterSprayEmitter.visible = _default_cache["sea_spray"]
+	_is_sea_spray_visible[0] = _default_cache["sea_spray"]
+	
+	# 2. Reset Colors
+	water.water_color = _default_cache["water_color"]
+	_water_color = [water.water_color.r, water.water_color.g, water.water_color.b]
+	
+	water.foam_color = _default_cache["foam_color"]
+	_foam_color = [water.foam_color.r, water.foam_color.g, water.foam_color.b]
+	
+	var c_color : Color = _default_cache["crest_color"]
+	_crest_color = [c_color.r, c_color.g, c_color.b]
+	water.get_active_material(0).set_shader_parameter("crest_color", c_color)
+	
+	_crest_glow_intensity[0] = _default_cache["crest_glow"]
+	water.get_active_material(0).set_shader_parameter("crest_glow_intensity", _crest_glow_intensity[0])
+	
+	_aerated_foam_glow[0] = _default_cache["aerated_glow"]
+	water.get_active_material(0).set_shader_parameter("aerated_foam_glow", _aerated_foam_glow[0])
+	
+	# 3. Reset All Wave Cascades & Force GPU Update
+	var original_cascades : Array[WaveCascadeParameters] = _default_cache["cascades"]
+	for i in range(water.parameters.size()):
+		var target : WaveCascadeParameters = water.parameters[i]
+		var source : WaveCascadeParameters = original_cascades[i]
+		
+		# We must update BOTH the internal data and the ImGui array [0] reference
+		target.tile_length = source.tile_length
+		target._tile_length[0] = source.tile_length.x; target._tile_length[1] = source.tile_length.y
+		target.displacement_scale = source.displacement_scale; target._displacement_scale[0] = source.displacement_scale
+		target.normal_scale = source.normal_scale; target._normal_scale[0] = source.normal_scale
+		target.wind_speed = source.wind_speed; target._wind_speed[0] = source.wind_speed
+		target.wind_direction = source.wind_direction; target._wind_direction[0] = source.wind_direction
+		target.fetch_length = source.fetch_length; target._fetch_length[0] = source.fetch_length
+		target.swell = source.swell; target._swell[0] = source.swell
+		target.spread = source.spread; target._spread[0] = source.spread
+		target.detail = source.detail; target._detail[0] = source.detail
+		target.whitecap = source.whitecap; target._whitecap[0] = source.whitecap
+		target.foam_amount = source.foam_amount; target._foam_amount[0] = source.foam_amount
+		
+		# CRUCIAL: Tell the GPU compute shader to recalculate the FFT spectrums!
+		target.should_generate_spectrum = true

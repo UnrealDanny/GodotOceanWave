@@ -87,7 +87,7 @@ func _update(compute_list : int, cascade_index : int, parameters : Array[WaveCas
 		pipelines[&'spectrum_compute'].call(context, compute_list, RenderingContext.create_push_constant([params.spectrum_seed.x, params.spectrum_seed.y, params.tile_length.x, params.tile_length.y, alpha, omega, params.wind_speed, deg_to_rad(params.wind_direction), DEPTH, params.swell, params.detail, params.spread, cascade_index]))
 		params.should_generate_spectrum = false
 		
-	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, DEPTH, params.time, cascade_index]))
+	pipelines[&'spectrum_modulate'].call(context, compute_list, RenderingContext.create_push_constant([params.tile_length.x, params.tile_length.y, DEPTH, params.time, cascade_index, params.loop_period]))
 
 	## --- WAVE SPECTRA INVERSE FOURIER TRANSFORM ---
 	var fft_push_constant := RenderingContext.create_push_constant([cascade_index])

@@ -54,6 +54,13 @@ enum MeshQuality { LOW, HIGH, HIGH8K }
 		next_update_time = next_update_time - (1.0 / (updates_per_second + 1e-10) - 1.0 / (value + 1e-10))
 		updates_per_second = value
 
+@export var bake_waves: bool = false :
+	set(value):
+		if value:
+			bake_waves_to_res() # Changed name here
+		bake_waves = false
+		
+		
 var wave_generator : WaveGenerator :
 	set(value):
 		if wave_generator: wave_generator.queue_free()
@@ -240,3 +247,53 @@ func get_height(world_pos: Vector3, steps: int = 3) -> float:
 	mutex.unlock()
 	
 	return summed_height
+
+func bake_waves_to_res() -> void:
+	print("Starting Ocean Bake...")
+	var frames_to_bake := 64
+	var time_step := 0.05 
+	var cascade_to_bake := 0 
+	
+	# 1. Calculate the exact duration of the exported animation (64 * 0.05 = 3.2 seconds)
+	var total_bake_duration := float(frames_to_bake) * time_step
+	
+	# 2. Force the simulation into a mathematically perfect loop
+	for p in parameters:
+		p.loop_period = total_bake_duration
+		p.time = 0.0 # Reset time to 0 so the loop starts cleanly
+		p.should_generate_spectrum = true # Force the GPU to rebuild the FFT!
+	
+	# Force a frame update so the GPU catches the reset before we start recording
+	_update_water(0.0)
+	RenderingServer.force_sync()
+	
+	var baked_images : Array[Image] = []
+	
+	for frame in range(frames_to_bake):
+		_update_water(time_step)
+		RenderingServer.force_sync() 
+		
+		var rid_displacement_map = wave_generator.descriptors[&'displacement_map'].rid
+		var device: RenderingDevice = RenderingServer.get_rendering_device()
+		var tex = device.texture_get_data(rid_displacement_map, cascade_to_bake) 
+		
+		var img := Image.create_from_data(wave_generator.map_size, wave_generator.map_size, false, Image.FORMAT_RGBAH, tex)
+		baked_images.append(img)
+		print("Baked frame %d/%d" % [frame + 1, frames_to_bake])
+		
+	print("Packaging frames into Texture2DArray...")
+	
+	# 3. Release the waves back to normal, chaotic simulation after the bake is done
+	for p in parameters:
+		p.loop_period = 0.0
+		p.should_generate_spectrum = true
+	
+	var texture_array := Texture2DArray.new()
+	var err := texture_array.create_from_images(baked_images)
+	
+	if err == OK:
+		var save_path := "res://baked_waves/baked_ocean_array.res"
+		ResourceSaver.save(texture_array, save_path)
+		print("Bake Complete! Saved directly to: ", save_path)
+	else:
+		print("Failed to create Texture2DArray. Error code: ", err)

@@ -76,6 +76,8 @@ signal scale_changed
 		should_generate_spectrum = true
 		_foam_amount = [value]
 
+@export var loop_period: float = 0.0
+
 # Explicitly typed class variables
 var spectrum_seed := Vector2i.ZERO
 var should_generate_spectrum: bool = true

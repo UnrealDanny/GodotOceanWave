@@ -3,14 +3,14 @@ extends MeshInstance3D
 
 @export var water : Node3D
 
-# Called when the node enters the scene tree for the first time.
-func _ready() -> void:
-	pass # Replace with function body.
+func _physics_process(_delta: float) -> void:
+	# 1. SAFETY: Stop if no water node is assigned in the Inspector
+	if not water:
+		return
+		
+	# 2. SAFETY: Stop if the assigned node doesn't have the height function
+	if not water.has_method("get_height"):
+		return
 
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(delta: float) -> void:
-	pass
-
-func _physics_process(delta: float) -> void:
+	# 3. Apply the height
 	global_position.y = water.get_height(global_position)

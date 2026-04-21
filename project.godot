@@ -36,7 +36,6 @@ gdscript/warnings/integer_division=0
 window/size/mode=3
 window/stretch/mode="canvas_items"
 window/stretch/aspect="ignore"
-window/vsync/vsync_mode=3
 window/quality/msaa_2d=0
 window/quality/msaa_3d=1
 window/show_image=false
@@ -78,7 +77,7 @@ normals={
 }
 water_color={
 "type": "color",
-"value": Color(0.0100228, 0.0196066, 0.0272118, 1)
+"value": Color(0.010022824, 0.019606646, 0.027211778, 1)
 }
 foam_color={
 "type": "color",
