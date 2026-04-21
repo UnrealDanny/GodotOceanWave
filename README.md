@@ -1,4 +1,4 @@
-# This is a new fork that works on Godot 4.6.2.
+# This is a new fork that works in Godot 4.6.2.
 Since 4.4 we have async GPU readback and this here does not use it.
 # KrautDev Fork of GodotOceanWaves
 This fork aims to add several features to make this amazing ocean implementation usable in a Godot game project.
